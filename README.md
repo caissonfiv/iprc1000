@@ -553,3 +553,55 @@ dist/IPRC1000-win32-x64/  打包产物（IPRC1000.exe + resources/app）
 - 遥控器的语音键（扫描码 `0x32`）偶尔会**只发按下、不发抬起**，甚至短时间连发几十个 down
   （实测 2 秒 30 个）。程序靠「同一键按下期间不再重复触发」和「语音动作 120 秒超时强制释放」
   兜住，正常使用察觉不到；如果发现语音动作像被按住不放，再按一次那个键让它补一个抬起即可。
+
+## 同步到 GitHub
+
+仓库已经初始化好了（分支 `main`，首个提交 `51b602b`，57 个文件 / 约 1.5 MB）。
+只剩下「建远端 + 推上去」这一步。
+
+### 一键推
+
+1. 浏览器打开 <https://github.com/new>，仓库名填 `iprc1000`。
+   **不要**勾 "Add a README" / "Add .gitignore" / "Choose a license"——远端必须是空仓库，
+   否则 push 会被拒绝。
+2. 双击 `push-github.cmd`，把网页上给出的 URL（`https://github.com/你的用户名/iprc1000.git`）粘进去。
+3. 会弹浏览器让你登录 GitHub，登录完回到命令行等它跑完。
+
+### 手动推
+
+```bat
+git remote add origin https://github.com/你的用户名/iprc1000.git
+git push -u origin main
+```
+
+之后每次改动：
+
+```bat
+git add -A
+git commit -m "改了什么"
+git push
+```
+
+### 仓库里**没有**什么（都是故意排除的）
+
+| 排除项 | 原因 |
+|---|---|
+| `node_modules/` `dist/` | 397 MB + 372 MB 构建产物，`npm i` 和打包脚本可重建 |
+| `out/` | 里面有 `mic.wav`（**你自己的录音**）、桌面截图、硬件 ID、本机绝对路径 |
+| `config/keymap.json` `config/layout.json` | 你自己的按键绑定与学习结果，首次运行自动生成 |
+| `tools/vbcable/` | VB-Audio EULA 明确禁止转载，请去 <https://vb-audio.com/Cable/> 自己下 |
+
+`.gitattributes` 强制 `*.cmd` / `*.bat` / `*.ps1` 用 CRLF 换行——LF 换行会让
+`cmd.exe` 读中文和路径时乱码（这个坑踩过一次）。
+
+### 别人 clone 下来怎么跑
+
+```bat
+npm i
+node scripts/selftest.js      :: 先看本机环境够不够
+run.cmd                       :: 观察模式，不需要驱动
+enable-clean-mode.cmd         :: 管理员运行 + 重启，进接管模式
+```
+
+麦克风那条链路要额外两步：装 VB-CABLE（`install-vbcable.cmd`）、
+改 BthPort 的 ETW 参数（`enable-mic-capture.cmd` + 重启）。
