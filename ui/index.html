@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>IPRC1000 按键映射</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#fff; --line:#e5e7eb; --ink:#111827; --sub:#6b7280;
+    --accent:#2563eb; --ok:#16a34a; --warn:#d97706;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:14px/1.55 -apple-system,"Segoe UI Variable","Segoe UI","Microsoft YaHei",system-ui,sans-serif;}
+  .wrap{max-width:960px;margin:0 auto;padding:28px 20px 60px}
+  header{display:flex;align-items:center;gap:14px;margin-bottom:20px}
+  h1{font-size:19px;margin:0;font-weight:650;letter-spacing:-.01em}
+  .dot{width:8px;height:8px;border-radius:50%;background:#d1d5db;flex:none}
+  .dot.on{background:var(--ok);box-shadow:0 0 0 3px rgba(22,163,74,.15)}
+  .status{color:var(--sub);font-size:13px}
+  .spacer{flex:1}
+  button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--line);
+    background:#fff;color:var(--ink);padding:6px 12px;transition:.15s}
+  button:hover{background:#f3f4f6}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  button.primary:hover{filter:brightness(1.06)}
+  button.ghost{border-color:transparent;color:var(--sub)}
+  button.ghost:hover{background:#eef0f3;color:var(--ink)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;
+    box-shadow:0 1px 2px rgba(16,24,40,.04)}
+  table{width:100%;border-collapse:collapse}
+  th{ text-align:left;font-weight:600;color:var(--sub);font-size:12px;
+    padding:10px 16px;background:#fafbfc;border-bottom:1px solid var(--line)}
+  td{padding:9px 16px;border-bottom:1px solid #f1f2f4;vertical-align:middle}
+  tr:last-child td{border-bottom:none}
+  tr:hover td{background:#fafbfc}
+  code{font:12px/1 ui-monospace,Consolas,monospace;color:var(--sub);
+    background:#f3f4f6;padding:3px 6px;border-radius:5px}
+  .act{font-weight:500}
+  .muted{color:var(--sub)}
+  .row-actions{display:flex;gap:6px;justify-content:flex-end}
+  .live{position:fixed;right:16px;bottom:16px;width:300px;max-height:44vh;overflow:auto;
+    background:#111827;color:#d1d5db;border-radius:12px;padding:12px 14px;
+    font:12px/1.7 ui-monospace,Consolas,monospace;box-shadow:0 8px 28px rgba(0,0,0,.22)}
+  .live b{color:#93c5fd;font-weight:500}
+  .live .t{color:#6b7280}
+  .modal-bg{position:fixed;inset:0;background:rgba(17,24,39,.35);display:none;
+    align-items:center;justify-content:center;padding:20px;z-index:20}
+  .modal-bg.on{display:flex}
+  .modal{background:#fff;border-radius:14px;width:520px;max-width:100%;padding:22px;
+    box-shadow:0 20px 50px rgba(0,0,0,.2)}
+  .modal h2{font-size:16px;margin:0 0 4px}
+  .modal .sub{color:var(--sub);font-size:13px;margin-bottom:16px}
+  .presets{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px}
+  .presets button{padding:8px 6px;font-size:13px;text-align:center}
+  .field{display:flex;gap:8px;align-items:center;margin-bottom:12px}
+  .field input[type=text]{flex:1;font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:8px}
+  .rec{font:13px ui-monospace,Consolas,monospace;background:#f3f4f6;border-radius:8px;
+    padding:8px 12px;min-width:150px;text-align:center;color:var(--ink)}
+  .foot{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+  .hint{color:var(--sub);font-size:12px;margin-top:2px}
+  .rec.on{background:#eff6ff;color:var(--accent);animation:pulse 1.2s infinite}
+  @keyframes pulse{50%{opacity:.55}}
+  .empty{padding:34px;text-align:center;color:var(--sub)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span class="dot" id="dot"></span>
+    <div>
+      <h1>IPRC1000 按键映射</h1>
+      <div class="status" id="status">正在检测设备…</div>
+    </div>
+    <div class="spacer"></div>
+    <button class="ghost" id="reset">重置全部</button>
+  </header>
+
+  <div class="card">
+    <table>
+      <thead>
+        <tr><th style="width:90px">用法码</th><th style="width:110px">名称</th><th>动作</th><th style="width:170px"></th></tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div class="empty" id="empty" style="display:none">
+      还没有记录到按键。按下遥控器任意键，它就会出现在这里。
+    </div>
+  </div>
+  <p class="hint">按键按下即被捕获（同一个键连按也只算一次）。点“改键”可以录制任意快捷键。</p>
+</div>
+
+<div class="live" id="live"><div class="t">实时事件</div></div>
+
+<div class="modal-bg" id="modalBg">
+  <div class="modal">
+    <h2 id="mTitle">改键</h2>
+    <div class="sub" id="mSub"></div>
+
+    <div class="field">
+      <button id="btnRec">录制快捷键</button>
+      <div class="rec" id="recBox">—</div>
+      <button class="ghost" id="btnClearKeys" style="display:none">清空</button>
+    </div>
+    <p class="hint" style="margin:-4px 0 14px">点“录制”后，用<b>电脑键盘</b>直接按组合键（例如 Ctrl+Shift+S）；按 Esc 取消。</p>
+
+    <div class="presets" id="presets"></div>
+
+    <div class="field">
+      <input type="text" id="txt" placeholder="或者：按下这个键时粘贴一段文字" />
+    </div>
+
+    <div class="foot">
+      <button class="ghost" id="btnNone">不执行</button>
+      <button id="btnCancel">取消</button>
+      <button class="primary" id="btnSave">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let S = { keys: [], presets: [], connected: false };
+let ed = { usage: null, action: null };
+
+const $ = id => document.getElementById(id);
+
+function fmt(action){
+  if(!action) return '未设置';
+  if(action.type==='keys') return action.label || keyLabel(action.keys);
+  if(action.type==='voice') return '按住说话 · ' + keyLabel(action.keys);
+  if(action.type==='text') return '粘贴：' + (action.text||'').slice(0,28);
+  if(action.type==='none') return '不执行';
+  return '?';
+}
+const VN={8:'Backspace',9:'Tab',13:'Enter',27:'Esc',32:'Space',37:'←',38:'↑',39:'→',40:'↓',
+  91:'Win',93:'Menu',160:'LShift',161:'RShift',162:'LCtrl',163:'RCtrl',164:'LAlt',165:'RAlt',
+  173:'静音',174:'音量-',175:'音量+'};
+function vkName(v){ if(VN[v])return VN[v]; if(v>=48&&v<=57)return String(v-48);
+  if(v>=65&&v<=90)return String.fromCharCode(v); if(v>=112&&v<=135)return 'F'+(v-111);
+  return 'VK'+(+v).toString(16).toUpperCase(); }
+function keyLabel(keys){
+  if(!keys||!keys.length) return '—';
+  const m=[],r=[];
+  for(const k of keys){ if(k===17)m.push('Ctrl'); else if(k===18)m.push('Alt');
+    else if(k===16)m.push('Shift'); else if(k===91)m.push('Win'); else r.push(vkName(k)); }
+  return [...m,...r].join('+');
+}
+
+async function load(){
+  S = await (await fetch('/api/state')).json();
+  render();
+}
+function render(){
+  $('dot').className = 'dot' + (S.connected?' on':'');
+  const mode = S.source === 'intercept' ? ' · 接管模式（按键已被拦下，不会打字）★'
+             : S.source === 'hid' ? ' · 直读模式（不会打字）'
+             : ' · 键盘模式（会往窗口打字）';
+  $('status').textContent = (S.connected ? '遥控器已连接' : '遥控器未连接 · 按任意键唤醒') + mode;
+
+  const tbody = $('rows');
+  tbody.innerHTML = '';
+  $('empty').style.display = S.keys.length ? 'none' : 'block';
+
+  for(const k of S.keys){
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td><code>${k.hex}</code></td>
+      <td class="muted">${k.name||''}</td>
+      <td class="act">${fmt(k.action)}</td>
+      <td><div class="row-actions">
+        <button data-u="${k.usage}" class="edit">改键</button>
+        <button data-u="${k.usage}" class="del ghost">清除</button>
+      </div></td>`;
+    tbody.appendChild(tr);
+  }
+  tbody.querySelectorAll('.edit').forEach(b=>b.onclick=()=>openEditor(+b.dataset.u));
+  tbody.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{
+    await fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({usage:+b.dataset.u,action:{type:'clear'}})});
+    load();
+  });
+
+  const p = $('presets'); p.innerHTML='';
+  for(const pr of S.presets){
+    const b=document.createElement('button'); b.textContent=pr.name;
+    b.onclick=()=>{ stopRec(); ed.action = presetAction(pr.id); $('recBox').textContent=fmt(ed.action); $('recBox').classList.remove('on'); };
+    p.appendChild(b);
+  }
+}
+function presetAction(id){
+  const map={
+    enter:{type:'keys',keys:[13]}, esc:{type:'keys',keys:[27]}, backspace:{type:'keys',keys:[8]},
+    up:{type:'keys',keys:[38]}, down:{type:'keys',keys:[40]}, left:{type:'keys',keys:[37]}, right:{type:'keys',keys:[39]},
+    tab:{type:'keys',keys:[9]}, volup:{type:'keys',keys:[175]}, voldown:{type:'keys',keys:[174]},
+    mute:{type:'keys',keys:[173]}, playpause:{type:'keys',keys:[179]},
+    winl:{type:'keys',keys:[91,76]}, wind:{type:'keys',keys:[91,68]}, snipping:{type:'keys',keys:[91,16,83]},
+    ralt_voice:{type:'voice',keys:[165]}, ctrlwin_voice:{type:'voice',keys:[17,91]},
+    none:{type:'none'}
+  };
+  return JSON.parse(JSON.stringify(map[id]||{type:'none'}));
+}
+
+function openEditor(usage){
+  stopRec();
+  ed.usage=usage;
+  const k=S.keys.find(x=>x.usage===usage);
+  ed.action=k.action?JSON.parse(JSON.stringify(k.action)):null;
+  $('mTitle').textContent = k.name ? `改键 · ${k.name}` : `改键 · ${k.hex}`;
+  $('mSub').textContent = '这个键按下时执行什么';
+  $('recBox').textContent = fmt(ed.action);
+  $('recBox').classList.remove('on');
+  $('txt').value = ed.action&&ed.action.type==='text'?ed.action.text:'';
+  $('modalBg').classList.add('on');
+}
+function closeEditor(){ stopRec(); $('modalBg').classList.remove('on'); }
+
+// ── 录制快捷键：浏览器端 + 服务端，双通道，谁先拿到算谁的 ──
+// 两路的原因：
+//   · 电脑键盘 → 浏览器自己的 keydown 最快最稳，不用等一次网络往返
+//   · 页面万一失焦 → 服务端 Raw Input 还能兜住
+// 遥控器自己的键不参与录制（接管模式下它给的是扫描码，记下来 inject 也复原不了）。
+const REC_MODS = new Set([16,17,18,91,92,160,161,162,163,164,165]);
+let rec = null;
+let recCool = 0;                   // 冷却时间，挡掉「按空格/回车」收尾时补发的那次 click
+
+function setRecUI(on, text){
+  const box = $('recBox');
+  if(text !== undefined) box.textContent = text;
+  box.classList.toggle('on', !!on);
+  const b = $('btnRec');
+  if(b){ b.disabled = !!on; b.textContent = on ? '正在录制…' : '录制快捷键'; }
+}
+
+function stopRec(){
+  const wasRec = !!rec;
+  if(rec){
+    window.removeEventListener('keydown', rec.onKey, true);
+    try{ rec.controller.abort(); }catch(e){}
+    rec = null;
+  }
+  // 只有「真的录完了一次」才上冷却：挡掉按空格/回车收尾时补发的那次 click，
+  // 同时又不会让「刚打开弹窗就点录制」被误伤。
+  if(wasRec) recCool = Date.now() + 300;
+  // 顺手把服务端挂着的捕获清掉，免得它把后面的按键全吃掉
+  fetch('/api/capture/cancel',{method:'POST'}).catch(()=>{});
+  setRecUI(false);
+}
+
+$('btnCancel').onclick = ()=>{ stopRec(); closeEditor(); };
+$('btnNone').onclick = ()=>{ stopRec(); ed.action={type:'none'}; $('recBox').textContent='不执行'; };
+$('btnRec').onclick = (e)=>{
+  e.preventDefault();
+  if(rec) return;                        // 正在录，忽略重复点击
+  if(Date.now() < recCool) return;       // 刚结束，挡掉余温
+  try{ e.currentTarget.blur(); }catch(err){}   // 别让按钮留着焦点，否则空格/回车会再触发一次 click
+
+  const box = $('recBox');
+  const mods = new Set();
+  const controller = new AbortController();
+
+  const finish = keys => {
+    if(!rec) return;
+    const got = (keys && keys.length) ? keys : null;
+    stopRec();
+    if(got){
+      ed.action = {type:'keys', keys: got};
+      box.textContent = keyLabel(got);
+    } else {
+      box.textContent = '—';
+    }
+  };
+
+  // ① 浏览器通道：电脑键盘
+  const onKey = ev => {
+    if(!rec) return;
+    const vk = ev.keyCode || ev.which;
+    if(vk === 27){ ev.preventDefault(); ev.stopPropagation(); finish(null); return; }  // Esc 取消
+    if(!vk) return;
+    ev.preventDefault(); ev.stopPropagation();
+    if(REC_MODS.has(vk)){
+      if(!mods.has(vk)){
+        mods.add(vk);
+        box.textContent = '按住 ' + keyLabel([...mods]) + '… 再按主键';
+      }
+      return;
+    }
+    finish([...mods, vk]);
+  };
+
+  rec = { onKey, controller };
+  setRecUI(true, '按下组合键…（Esc 取消）');
+  window.focus();
+  window.addEventListener('keydown', onKey, true);
+
+  // ② 服务端通道：页面失焦时兜底
+  fetch('/api/capture',{method:'POST', signal: controller.signal})
+    .then(r=>r.json())
+    .then(r=>{ if(rec && r && r.keys && r.keys.length) finish(r.keys); })
+    .catch(()=>{});
+
+  // 20 秒不按就放弃，别把服务端挂在那里
+  setTimeout(()=>{ if(rec) finish(null); }, 20000);
+};
+$('btnSave').onclick = async ()=>{
+  const t=$('txt').value.trim();
+  const action = t ? {type:'text',text:t} : (ed.action||{type:'none'});
+  await fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({usage:ed.usage,action})});
+  closeEditor(); load();
+};
+$('reset').onclick = async ()=>{
+  if(!confirm('清空所有映射？')) return;
+  await fetch('/api/reset',{method:'POST'}); load();
+};
+
+// 实时事件
+const live=$('live');
+function push(html){
+  const d=document.createElement('div');
+  d.innerHTML=`<span class="t">${new Date().toLocaleTimeString('zh-CN',{hour12:false})}</span> ${html}`;
+  live.appendChild(d);
+  while(live.children.length>60) live.removeChild(live.children[1]);
+  live.scrollTop=live.scrollHeight;
+}
+const es = new EventSource('/api/events');
+es.onmessage = e => {
+  const m = JSON.parse(e.data);
+  if(m.type==='key' && m.down){
+    push(`按键 <b>0x${m.usage.toString(16).padStart(2,'0')}</b> ${m.mapped?'✓':'<span style="color:#fbbf24">未映射</span>'}`);
+    setTimeout(load,120);
+  }
+  if(m.type==='state') load();
+  if(m.type==='device') load();
+  if(m.type==='capture-mod') push('修饰键 …');
+};
+
+load();
+</script>
+</body>
+</html>

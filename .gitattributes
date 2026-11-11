@@ -1,0 +1,15 @@
+# 统一换行，避免 Windows 上 checkout 后 .cmd 变 LF 导致 cmd.exe 乱码
+* text=auto
+
+# Windows 批处理必须是 CRLF，否则中文/路径会被解析错
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# 二进制：不要让 git 试图做换行转换或文本 diff
+*.exe  -text
+*.dll  -text
+*.sys  -text
+*.ico  -text
+*.png  -text
+*.wav  -text

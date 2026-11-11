@@ -1,0 +1,32 @@
+# ── 依赖与构建产物 ──
+node_modules/
+dist/
+package-lock.json.bak
+
+# ── 运行时产物（⚠️ 含个人数据，绝对不要提交）──
+# out/ 里有：录音 mic.wav（你的声音）、桌面截图、设备硬件 ID、本机绝对路径
+out/
+*.log
+*.wav
+*.png
+
+# 例外：界面图标必须进仓库，否则打包出来的程序没有图标
+!ui/icon.png
+
+# ── 运行时配置：首次运行自动生成，不进仓库 ──
+# keymap.json 是你自己学出来的按键绑定，layout.json 是遥控器各坑位的实测结果。
+# 源码里（src/layout.js 的 SLOTS）已内置出厂猜测值，新用户跑一遍向导即可。
+config/keymap.json
+config/layout.json
+
+# ── 第三方安装包：授权不允许随仓库再分发 ──
+# VB-CABLE 是 VB-Audio 的捐赠版软件，EULA 明确禁止转载，请自行去官网下载
+tools/vbcable/
+
+# ── 编辑器 / 系统垃圾 ──
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
+*.tmp
+*.bak
