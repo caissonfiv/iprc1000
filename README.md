@@ -556,31 +556,41 @@ dist/IPRC1000-win32-x64/  打包产物（IPRC1000.exe + resources/app）
 
 ## 同步到 GitHub
 
-仓库已经初始化好了（分支 `main`，首个提交 `51b602b`，57 个文件 / 约 1.5 MB）。
-只剩下「建远端 + 推上去」这一步。
+仓库在 <https://github.com/caissonfiv/iprc1000>，走 **SSH**（不用每次输密码）。
 
-### 一键推
+### 日常提交
 
-1. 浏览器打开 <https://github.com/new>，仓库名填 `iprc1000`。
-   **不要**勾 "Add a README" / "Add .gitignore" / "Choose a license"——远端必须是空仓库，
-   否则 push 会被拒绝。
-2. 双击 `push-github.cmd`，把网页上给出的 URL（`https://github.com/你的用户名/iprc1000.git`）粘进去。
-3. 会弹浏览器让你登录 GitHub，登录完回到命令行等它跑完。
+双击 `push-github.cmd`：它会列出改了什么、问一句提交说明、然后推上去。
 
-### 手动推
-
-```bat
-git remote add origin https://github.com/你的用户名/iprc1000.git
-git push -u origin main
-```
-
-之后每次改动：
+或者手动：
 
 ```bat
 git add -A
 git commit -m "改了什么"
 git push
 ```
+
+没有改动时 push 会报 `Everything up-to-date`，这是正常的。
+
+### 换一台机器要重新配一次
+
+```bat
+:: 1. 生成密钥（一路回车，不要设密码短语也行）
+ssh-keygen -t ed25519 -C "你的邮箱"
+
+:: 2. 把 ~/.ssh/id_ed25519.pub 的内容整段复制到
+::    https://github.com/settings/keys  →  New SSH key
+
+:: 3. 验一下，看到 "Hi 你的用户名!" 就通了
+ssh -T git@github.com
+
+:: 4. 拉代码
+git clone git@github.com:caissonfiv/iprc1000.git
+```
+
+> 本机那把 key 是被加成**仓库级 Deploy Key**（所以 `ssh -T` 回的是
+> `Hi caissonfiv/iprc1000!` 而不是 `Hi caissonfiv!`）。区别：它只能访问这一个仓库，
+> 推拉都够用；但要访问别的仓库就得加成账号级 key。
 
 ### 仓库里**没有**什么（都是故意排除的）
 
