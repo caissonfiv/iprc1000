@@ -1,17 +1,19 @@
 {
   "name": "iprc1000",
-  "version": "0.2.0",
-  "description": "IPRC1000 蓝牙语音遥控器 → Windows 按键映射（桌面程序）",
+  "version": "0.4.0",
+  "description": "IPRC1000 驱动控制面板",
   "main": "main.js",
   "scripts": {
+    "test": "node --test tests/*.test.js && node scripts/test_latch.js && node scripts/test_stuck.js && node scripts/test_combo.js && node scripts/ui_sim.js",
     "start": "electron .",
     "app": "electron .",
-    "web": "node src/app.js",
+    "web": "node src/driver-app.js",
     "icon": "node scripts/make-icon.js",
-    "dist": "electron-packager . IPRC1000 --platform=win32 --arch=x64 --out=dist --overwrite --asar=false --icon=ui/icon.ico --app-version=0.2.0",
+    "dist": "node scripts/package-driver-ui.cjs",
     "learn": "node scripts/learn.js 90",
     "diag": "node scripts/diag_input.js",
-    "list": "node scripts/rawlist.js"
+    "list": "node scripts/rawlist.js",
+    "test:native": "node scripts/test_stroke.js"
   },
   "keywords": [],
   "author": "",

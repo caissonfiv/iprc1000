@@ -1,0 +1,60 @@
+; GENERATED TEMPLATE. Replace the hardware-ID token with inventory-verified data.
+; Device-specific Extension INF; never modifies keyboard class UpperFilters.
+[Version]
+Signature="$WINDOWS NT$"
+Class=Extension
+ClassGuid={e2f84ce7-8efa-411c-aa69-97454ca4cb57}
+ExtensionId={3806a9d0-c131-4af1-9ec2-7f58c7e50b3d}
+Provider=%Provider%
+DriverVer=11/12/2026,0.1.2.0
+CatalogFile=iprcflt.cat
+PnpLockdown=1
+
+[Manufacturer]
+%Provider%=Models,NTamd64.10.0...22621
+
+[Models.NTamd64.10.0...22621]
+%Device%=Install,__IPRC_HARDWARE_ID__
+
+[Install.NT]
+CopyFiles=DriverCopy
+
+[Install.NT.Services]
+AddService=iprcflt,0,DriverService
+
+[DriverService]
+DisplayName=%Service%
+ServiceType=1
+StartType=3
+ErrorControl=1
+ServiceBinary=%13%\iprcflt.sys
+
+[Install.NT.Filters]
+AddFilter=iprcflt,,UpperFilter
+
+[UpperFilter]
+FilterPosition=Upper
+
+[Install.NT.Wdf]
+KmdfService=iprcflt,Kmdf
+
+[Kmdf]
+KmdfLibraryVersion=1.33
+
+[DestinationDirs]
+DriverCopy=13
+
+[DriverCopy]
+iprcflt.sys
+
+[SourceDisksNames]
+1=%Disk%,,,
+
+[SourceDisksFiles]
+iprcflt.sys=1
+
+[Strings]
+Provider="IPRC1000 Project"
+Device="IPRC1000 keyboard filter prototype"
+Service="IPRC1000 device keyboard filter"
+Disk="IPRC1000 driver package"

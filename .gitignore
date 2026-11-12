@@ -1,6 +1,14 @@
 # ── 依赖与构建产物 ──
 node_modules/
+driver/build/
+driver/.toolchain/
+driver-bin/*.exe
+driver-bin/*.pdb
+*.pfx
+*.p12
+install-state*.json
 dist/
+dist-driver-stage-*/
 package-lock.json.bak
 
 # ── 运行时产物（⚠️ 含个人数据，绝对不要提交）──

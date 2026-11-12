@@ -1,4 +1,6 @@
 'use strict';
+// 0.4: the default core is the driver configuration service. It does not read
+// raw keyboard packets or inject input. Closing the UI leaves the kernel policy active.
 // 桌面版外壳：一个独立窗口 + 一个后台核心进程（无浏览器、无地址栏）
 //
 // 为什么核心要跑在子进程里：
@@ -12,8 +14,9 @@ const { spawn } = require('child_process');
 const { app, BrowserWindow, Menu, shell, dialog, Tray } = require('electron');
 
 const APP_DIR = __dirname;
+const DRIVER_MODE = process.env.IPRC_BACKEND !== 'legacy';
 const ICON = path.join(APP_DIR, 'ui', 'icon.ico');
-const OUT_DIR = path.join(APP_DIR, 'out');
+const OUT_DIR = process.env.IPRC_OUT || path.join(APP_DIR, 'out');
 
 let mainWin = null;
 let child = null;
@@ -35,9 +38,9 @@ async function pickPort() {
 /* ---------- 启动核心子进程 ---------- */
 // 打包后配置放 exe 同级的 config\，重新打包不会覆盖用户的改动
 function ensureDataDir() {
-  const dir = app.isPackaged
+  const dir = process.env.IPRC_DATA || (app.isPackaged
     ? path.join(path.dirname(process.execPath), 'config')
-    : path.join(APP_DIR, 'config');
+    : path.join(APP_DIR, 'config'));
   try {
     fs.mkdirSync(dir, { recursive: true });
     // 首次运行：把打进包里的默认配置复制出来
@@ -57,9 +60,9 @@ function startCore(port) {
   const logFile = path.join(OUT_DIR, 'core.log');
   try { fs.mkdirSync(OUT_DIR, { recursive: true }); } catch {}
   try { fs.writeFileSync(logFile, ''); } catch {}
-  const dataDir = ensureDataDir();
+  const dataDir = DRIVER_MODE ? (process.env.IPRC_DATA || path.join(APP_DIR,'config-driver')) : ensureDataDir();
 
-  child = spawn(process.execPath, [path.join(APP_DIR, 'src', 'app.js')], {
+  child = spawn(process.execPath, [path.join(APP_DIR, 'src', DRIVER_MODE ? 'driver-app.js' : 'app.js')], {
     cwd: APP_DIR,
     windowsHide: true,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -117,7 +120,7 @@ function createWindow(port) {
     },
   });
 
-  mainWin.once('ready-to-show', () => { if (mainWin) mainWin.show(); });
+  mainWin.once('ready-to-show', () => { if (mainWin && process.env.SMOKE !== '1') mainWin.show(); });
 
   const url = `http://127.0.0.1:${port}/`;
   const load = () => { if (mainWin && !mainWin.isDestroyed()) mainWin.loadURL(url).catch(() => {}); };
@@ -145,112 +148,56 @@ function createWindow(port) {
 
 /* ---------- 自检 ---------- */
 function startSmoke(port) {
-  const write = s => { try { fs.appendFileSync(path.join(OUT_DIR, 'smoke.txt'), s + '\n'); } catch {} };
-  write('boot port=' + port);
+  // Isolated UI smoke; caller must set IPRC_DIAGNOSTIC and IPRC_DATA.
+  if (process.env.IPRC_DIAGNOSTIC !== '1') throw new Error('SMOKE requires IPRC_DIAGNOSTIC=1');
   setTimeout(async () => {
-    write('timer fired');
     try {
-      const info = await mainWin.webContents.executeJavaScript(`(async () => {
-        const sleep = ms => new Promise(r => setTimeout(r, ms));
-        const txt = id => (document.getElementById(id) || {}).textContent || '';
-        const api = async () => (await fetch('/api/app')).json();
-
-        // ① 基线
-        const artIds = [...document.querySelectorAll('.slot')].map(n => n.dataset.slot);
-        const a0 = await api();
-        const base = {
-          slots: artIds.length,
-          empty: document.querySelectorAll('.slot.empty').length,
-          mapped: document.querySelectorAll('.slot.mapped').length,
-          set: document.querySelectorAll('.slot.set').length,
-          presets: document.querySelectorAll('#presets button').length,
-          chips: document.querySelectorAll('.chip').length,
-          status: txt('status'),
-          wizBtn: txt('btnWizard'),
-          wizBtnDisabled: document.getElementById('btnWizard').disabled,
-          missingInApi: artIds.filter(i => !a0.slots.some(s => s.id === i)),
-          missingInArt: a0.slots.map(s => s.id).filter(i => !artIds.includes(i)),
-        };
-
-        // ② 点一下「语音」，看右侧面板有没有正确带出绑定和动作
-        const m = document.querySelector('.slot[data-slot="mic"]');
-        if (m) m.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        await sleep(120);
-        const click = {
-          title: txt('pName'), code: txt('pCode'), rec: txt('recBox'),
-          sel: document.querySelectorAll('.slot.sel').length,
-        };
-
-        // ③ 启动「依次绑定」，应该停在第一个空位 pwr
-        document.getElementById('btnWizard').click();
-        await sleep(700);
-        const a1 = await api();
-        const w1 = {
-          learn: a1.learn, learnText: txt('learntext'),
-          wizBtn: txt('btnWizard'), panel: txt('pName'),
-          skipShown: document.getElementById('btnSkip').style.display !== 'none',
-          learningMark: document.querySelectorAll('.slot.learning').length,
-        };
-
-        // ④ 模拟连绑两个（真机上就是按两下遥控器），看有没有自动往下跳
-        window.__iprcSim({ type:'learn-done', slot:'pwr',  usage:0x66 });
-        await sleep(700);
-        window.__iprcSim({ type:'learn-done', slot:'back', usage:0x67 });
-        await sleep(900);
-        const a2 = await api();
-        const w2 = {
-          learn: a2.learn, learnText: txt('learntext'), wizBtn: txt('btnWizard'),
-        };
-
-        // ⑤ 按错键（码已经被别的坑位占了）应该被拒绝，并停在原地继续等
-        document.getElementById('btnSkip').click();
-        await sleep(700);
-        const before = (await api()).learn;
-        window.__iprcSim({ type:'learn-dup', slot: before, usage: 72, owner: '上' });
-        await sleep(300);
-        const dup = {
-          warned: document.getElementById('learnbar').classList.contains('warn'),
-          learnText: txt('learntext'),
-          stillLearning: (await api()).learn,
-        };
-
-        // ⑥ 取消，应该回到干净状态
-        document.getElementById('btnLearnCancel').click();
-        await sleep(700);
-        const a3 = await api();
-        const end = {
-          learn: a3.learn, wizBtn: txt('btnWizard'),
-          learnbarOn: document.getElementById('learnbar').classList.contains('on'),
-          skipShown: document.getElementById('btnSkip').style.display !== 'none',
-        };
-
-        // 回到「语音」再截一张有选中态的图
-        const m2 = document.querySelector('.slot[data-slot="mic"]');
-        if (m2) m2.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        await sleep(200);
-
-        return { base, click, w1, w2, dup, end };
+      const result = await mainWin.webContents.executeJavaScript(DRIVER_MODE ? `(async () => {
+        const check=(ok,text)=>{if(!ok)throw new Error(text);};
+        const get=()=>fetch('/api/app').then(r=>r.json());
+        const post=(url,body)=>fetch(url,{method:'POST',headers:{'Content-Type':'application/json','X-IPRC-Token':window.IPRC_TOKEN},body:JSON.stringify(body)}).then(r=>r.json());
+        const state=await get();
+        check(state.diagnostic&&state.backend==='driver','isolated driver diagnostic');
+        check(document.querySelectorAll('.slot').length===22,'22 SVG buttons');
+        document.querySelector('.slot[data-slot="back"]').dispatchEvent(new MouseEvent('click',{bubbles:true}));
+        check(document.getElementById('pName').textContent==='返回','select button');
+        document.getElementById('ruleType').value='2';document.getElementById('ruleType').onchange();
+        document.getElementById('target').value='0';document.getElementById('target').onchange();
+        await document.getElementById('btnSave').onclick();
+        const changed=await get();
+        check(changed.state.rules[0x21].type===2&&changed.state.rules[0x21].code===1,'UI apply Escape');
+        const enabled=await post('/api/mode',{mode:1});
+        check(enabled.ok&&enabled.state.mode===1&&enabled.state.rules[0x21].code===1,'enable preserves rules');
+        const stopped=await post('/api/panic',{});
+        check(stopped.ok&&stopped.state.mode===0,'observe');
+        await load();
+        check(document.getElementById('saveHint').textContent==='当前驱动配置','saved state displayed');
+        await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+        return {slots:22,backend:'driver',diagnostic:true};
+      })()` : `(async () => {
+        const check = (condition, text) => { if (!condition) throw new Error(text); };
+        const get = () => fetch('/api/app').then(r => r.json());
+        const state = await get();
+        check(state.diagnostic, 'diagnostic mode');
+        check(state.slots.length === 22, '22 slots');
+        check(state.slots.every(s => s.usage != null), 'all positions bound');
+        check(state.slots.find(s => s.id === 'up').action.type === 'native', 'navigation default');
+        check(state.slots.find(s => s.id === 'mic').action.type === 'none', 'voice opt in');
+        check(document.querySelectorAll('.slot').length === 22, '22 SVG buttons');
+        document.querySelector('.slot[data-slot="mic"]').dispatchEvent(new MouseEvent('click', {bubbles:true}));
+        check(document.getElementById('pName').textContent.includes('语音'), 'click selects voice');
+        const panic = await fetch('/api/panic', {method:'POST'});
+        check(panic.ok && (await get()).panic, 'panic API');
+        await fetch('/api/rearm', {method:'POST'});
+        check(!(await get()).panic, 'rearm API');
+        return {slots:state.slots.length, bound:state.slots.filter(s=>s.usage!=null).length, diagnostic:true};
       })()`);
-      write('SMOKE ' + JSON.stringify(info, null, 1));
-    } catch (e) { write('SMOKE_ERR ' + String((e && e.message) || e)); }
-    try {
-      // 再让向导停在「等待按键」状态截一张，方便看提示条长什么样
-      await mainWin.webContents.executeJavaScript(
-        `document.getElementById('btnWizard').click()`);
-      await new Promise(r => setTimeout(r, 900));
-      const imgW = await mainWin.webContents.capturePage();
-      fs.writeFileSync(path.join(OUT_DIR, 'shot-wizard.png'), imgW.toPNG());
-      write('SHOT_WIZ ' + imgW.getSize().width + 'x' + imgW.getSize().height);
-      await mainWin.webContents.executeJavaScript(
-        `document.getElementById('btnLearnCancel').click()`);
-      await new Promise(r => setTimeout(r, 500));
-
-      const img = await mainWin.webContents.capturePage();
-      fs.writeFileSync(path.join(OUT_DIR, 'shot.png'), img.toPNG());
-      write('SHOT ' + img.getSize().width + 'x' + img.getSize().height);
-    } catch (e) { write('SHOT_ERR ' + String((e && e.message) || e)); }
-    setTimeout(() => app.quit(), 400);
-  }, 4500);
+      if (DRIVER_MODE) fs.writeFileSync(path.join(OUT_DIR,'driver-ui.png'),(await mainWin.webContents.capturePage()).toPNG());
+      fs.writeFileSync(path.join(OUT_DIR, 'smoke.txt'), 'PASS ' + JSON.stringify(result));
+    } catch (error) {
+      fs.writeFileSync(path.join(OUT_DIR, 'smoke.txt'), 'FAIL ' + String(error.stack || error));
+    } finally { app.quit(); }
+  }, 1500);
 }
 
 /* ---------- 托盘：万一输入出问题，这里能一键撤掉接管 ---------- */
@@ -258,12 +205,17 @@ let tray = null;
 
 async function panicStop(port) {
   try {
-    await fetch(`http://127.0.0.1:${port}/api/panic`, { method: 'POST' });
+    const page = DRIVER_MODE ? await fetch(`http://127.0.0.1:${port}/`).then(r=>r.text()) : '';
+    const token = page.match(/window\.IPRC_TOKEN='([a-f0-9]+)'/);
+    const response = await fetch(`http://127.0.0.1:${port}/api/panic`, {
+      method:'POST',headers:DRIVER_MODE ? {'Content-Type':'application/json','X-IPRC-Token':token?.[1]||''} : {},body:DRIVER_MODE ? '{}' : undefined,
+    });
+    if (!response.ok) throw new Error((await response.json()).reason || '接管线程尚未确认停止');
     dialog.showMessageBox({
       type: 'info',
       title: '已紧急停止',
-      message: '接管模式已关闭，按键全部交还系统。',
-      detail: '现在键盘和鼠标应该恢复正常了。\n遥控器可能会重新往窗口里打字。\n要恢复接管，请退出程序再打开一次。',
+      message: '已恢复原样放行。',
+      detail: DRIVER_MODE ? '驱动中的按键绑定已保留，可在面板重新启用映射。' : '遥控器可能会重新往窗口里打字。',
       buttons: ['好'],
     });
   } catch (e) {
@@ -302,6 +254,7 @@ if (!gotLock) {
 (async () => {
   if (!gotLock) return;
   const port = await pickPort();
+  app.corePort = port;
   startCore(port);
 
   await app.whenReady();
@@ -315,7 +268,19 @@ if (!gotLock) {
   });
 })();
 
-app.on('before-quit', () => { app.isQuiting = true; });
+let quitConfirmed = false;
+app.on('before-quit', event => {
+  app.isQuiting = true;
+  if (DRIVER_MODE) return; // Kernel mappings continue independently of the UI.
+  if (quitConfirmed || !child || child.exitCode !== null) return;
+  event.preventDefault();
+  if (app.stoppingCore) return;
+  app.stoppingCore = true;
+  const port = app.corePort;
+  fetch('http://127.0.0.1:' + port + '/api/panic', {
+    method: 'POST', signal: AbortSignal.timeout(3000),
+  }).catch(() => {}).finally(() => { quitConfirmed = true; app.quit(); });
+});
 app.on('will-quit', () => { try { if (child) child.kill(); } catch {} });
 app.on('window-all-closed', () => app.quit());
 process.on('exit', () => { try { if (child) child.kill(); } catch {} });

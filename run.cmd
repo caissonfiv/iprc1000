@@ -1,9 +1,11 @@
 @echo off
+set ELECTRON_RUN_AS_NODE=
+set NODE_OPTIONS=
 rem IPRC1000 remote mapper - launch the desktop app
 cd /d "%~dp0"
 
-if exist "dist\IPRC1000-win32-x64\IPRC1000.exe" (
-    start "" "dist\IPRC1000-win32-x64\IPRC1000.exe"
+if exist "dist\driver-ui\IPRC1000-Driver-win32-x64\IPRC1000-Driver.exe" (
+    start "" "dist\driver-ui\IPRC1000-Driver-win32-x64\IPRC1000-Driver.exe"
     exit /b 0
 )
 

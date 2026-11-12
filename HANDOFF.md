@@ -1,4 +1,16 @@
+# 最新进展：2026-11-12 驱动 UI 0.4.0
+
+- 0.1.2 驱动已由用户实机确认 RUNNING、connected=1 和映射成功。根因之一是未定义 KMDF 编译版本宏，使最低版本成为 0xFFFFFFFF；现已修正并增加二进制检查。
+- 桌面主入口默认运行 src/driver-app.js，ui/driver.html + driver.js 复用旧遥控器图形。driver-client.js 调用配套 CLI snapshot/apply，经 ABI 1 读写完整策略。
+- UI 启动只读，启停保留绑定，关闭后映射继续。应用是 RAM，保存到设备是显式持久化。组合键、语音、文字暂不支持。
+- 打包：先生成 driver-bin/iprcctl.exe，再 npm run dist。scripts/package-driver-ui.cjs 使用文件白名单生成仅驱动版本，包含 Electron 但不带 Interception/HID/注入依赖。
+- 22 项 Node 回归、原有测试脚本及最终便携包 Electron 模拟驱动自检通过。用户已确认管理员 UI 测试成功；重连与电源场景继续验证；不要把模拟测试写成硬件验证。
+- 0.1.2 已安装包保持原样。UI 包内有新版用户态 CLI，无须重新安装 .sys。本轮未写入真实映射、设备/驱动安装状态或安全配置。
+
+---
 # HANDOFF · IPRC1000 蓝牙语音遥控器 → Windows 映射
+
+> 历史交接快照：0.3.0 已重构接管生命周期、注入队列和默认配置；现行行为见 CHANGELOG.md。本文中的三级降级、默认键位数量及部分故障根因解释描述的是旧版本。
 
 > 交接给：任何要继续维护的人（包括三个月后的我自己）
 > 仓库：<https://github.com/caissonfiv/iprc1000> · 最后更新 2026-11-12

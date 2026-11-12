@@ -15,8 +15,9 @@ const inject = require('./inject');
 const model = require('./model');
 
 const PORT = Number(process.env.PORT || 7788);
+const diagnostic = process.env.IPRC_DIAGNOSTIC === '1';
 
-const OUT_DIR = path.join(__dirname, '..', 'out');
+const OUT_DIR = process.env.IPRC_OUT || path.join(__dirname, '..', 'out');
 fs.mkdirSync(OUT_DIR, { recursive: true });
 const logStream = fs.createWriteStream(path.join(OUT_DIR, 'app.log'), { flags: 'a' });
 
@@ -116,7 +117,7 @@ let present = false;   // 设备是否在线（Raw Input 或 直读 任一能看
 function scanDevices() {
   const r = findRemote();
   remote = r || null;                       // 仅用于 Raw Input 事件过滤
-  const now = !!(r || hid.find());          // 直读模式下设备不一定出现在 Raw Input 列表里
+  const now = !!r;
 
   if (now !== present) {
     present = now;
@@ -131,6 +132,7 @@ function scanDevices() {
       broadcast({ type: 'stuck-clear' });
     }
     if (!now && sourceKind === 'intercept') {
+      releaseHeld();
       // 断开重连后设备号会变，接管线程必须重建
       intercept.stop();
       sourceKind = 'none';
@@ -154,98 +156,33 @@ function scanDevices() {
     return;
   }
 
-  if (sourceKind === 'hid' && hidHandle && !hid.find()) {
-    log('直读连接断开，尝试恢复');
-    try { hidHandle.close(); } catch {}
-    hidHandle = null;
-    connectSource();
-  }
 }
-setInterval(scanDevices, 3000);
 
-// 选择输入源：能直读 HID 报文就直读（驱动已切到「符合 HID 标准的设备」时），
-// 否则退回 Raw Input（驱动还是键盘时）。
+// Two explicit modes: exclusive device interception, or observation only.
+// Raw Input cannot suppress the original event, so it must never also inject.
 function connectSource() {
-  if (panicStop) return;   // 紧急停止期间不再连任何数据源（重启才恢复）
-  if (sourceKind === 'intercept') return;
-  if (sourceKind === 'hid' && hidHandle) return;
-  if (hidPending) return;
-
-  // ① 最理想：接管模式（驱动层截获，按键不再打字）
+  if (panicStop) return;
+  if (diagnostic) { sourceKind = 'raw'; return; }
+  if (sourceKind === 'intercept' || interceptPending) return;
   if (!interceptTried) {
     tryIntercept();
     if (interceptPending || sourceKind === 'intercept') return;
   }
-
-  if (!hidBlocked) {
-    hidPending = true;
-    let gotData = false;
-
-    const r = hid.open(
-      e => {
-        if (!gotData) {
-          gotData = true;
-          hidPending = false;
-          if (sourceKind !== 'hid') {
-            sourceKind = 'hid';
-            log('▶ 直读 HID 报文模式（按键不会再打进系统）');
-            broadcast({ type: 'state' });
-          }
-        }
-        try { handleEvent({ id: e.id, vkey: 0, down: e.down, isRemote: true }); }
-        catch (err) { log('事件异常:', String(err)); }
-      },
-      msg => {
-        // 打开成功但读不到（驱动还是键盘）——安静地退回 Raw Input
-        lastHidError = msg;
-        hidBlocked = true;
-        hidPending = false;
-        hidHandle = null;
-        if (sourceKind === 'hid') { sourceKind = 'none'; connectSource(); }
-      }
-    );
-
-    if (r.ok) {
-      hidHandle = r;
-      // 900ms 内没收到任何报文 = 读不了，直接放弃
-      setTimeout(() => {
-        if (!gotData && hidPending) {
-          hidPending = false;
-          hidBlocked = true;
-          try { hidHandle && hidHandle.close(); } catch {}
-          hidHandle = null;
-          if (sourceKind === 'hid') { sourceKind = 'none'; connectSource(); }
-        }
-      }, 900);
-      if (sourceKind === 'none') sourceKind = 'raw';
-      return;
-    }
-
-    hidPending = false;
-    lastHidError = r.error;
-    hidBlocked = true;
-  }
-
-  if (sourceKind !== 'raw' && sourceKind !== 'hid' && sourceKind !== 'intercept') {
-    sourceKind = 'raw';
-  }
+  sourceKind = 'raw';
 }
-
-// 每隔 30 秒重试一次数据源：直读被拒 / 刚插上设备时能自动升级
-setInterval(() => {
-  if (sourceKind === 'none' || sourceKind === 'raw') { hidBlocked = false; connectSource(); }
-}, 30000);
 
 // 接管看门狗：接管是「遥控器按键不打字」的唯一保障。
 // 一旦掉回 Raw Input，每一秒都在往当前窗口里打字（就是那个满屏 mmmmmm），
 // 所以必须尽快抢回来，不能等下一次重启。连续失败就退避，最长 1 分钟一次。
 setInterval(() => {
-  if (sourceKind === 'intercept') {
+  if (panicStop) return;
+  const st = intercept.info();
+  if (sourceKind === 'intercept' || interceptPending) {
     // 线程还活着的心跳（worker 里每 ≤1 秒发一次）。停跳说明卡在系统调用里了：
     // 那时过滤器还挂在设备上、却没人读报文，遥控器就会「按一下彻底没反应」。
     // 必须销毁上下文把键还给系统，再重建。
-    const st = intercept.info();
     if (st.stalled) {
+      releaseHeld();
       log(`⚠ 接管线程已 ${Math.round(st.tickAge / 1000)} 秒没有心跳，强制重建（否则遥控器会完全没反应）`);
       try { intercept.stop(); } catch {}
       sourceKind = 'none';
@@ -260,7 +197,7 @@ setInterval(() => {
     armBackoff = 0;
     return;
   }
-  if (panicStop || !present || sourceKind === 'hid') return;
+  if (panicStop || !present) return;
   if (!intercept.dllExists() || interceptPending) return;
   const wait = Math.min(60000, 5000 * Math.pow(2, Math.min(armBackoff, 4)));
   if (Date.now() - lastArmAt < wait) return;
@@ -309,10 +246,6 @@ function dispatch(usage, ev) {
 }
 
 let sourceKind = 'none';
-let hidHandle = null;
-let hidBlocked = false;
-let hidPending = false;
-let lastHidError = '';
 let interceptTried = false;
 let interceptPending = false;
 let armBackoff = 0;      // 连续接管失败次数 → 退避，避免每 2 秒死磕驱动
@@ -352,6 +285,7 @@ function tryIntercept() {
       }
     },
     (kind, payload) => {
+      if (kind === 'configured') { broadcast({ type: 'state' }); return; }
       interceptPending = false;
       interceptTried = true;
       if (kind === 'ready') {
@@ -413,7 +347,7 @@ function rawHandler(ev) {
     // Win+H —— 越急越乱。
     if (panicStop) return;
     const isRemote = !!(remote && ev.hDevice === remote.hDevice);
-    if (sourceKind === 'hid' || sourceKind === 'intercept') {
+    if (sourceKind === 'intercept') {
       // 直读/接管模式下 Raw Input 只用来录制快捷键（物理键盘），遥控器事件走另一条路
       if (capture) handleEvent({ id: ev.usage, vkey: ev.vkey, down: ev.down, isRemote: false });
       return;
@@ -541,7 +475,7 @@ function handleEvent(ev) {
     latch.up(usage);
   }
 
-  dispatch(usage, ev);
+  if (!diagnostic && sourceKind === 'intercept') dispatch(usage, ev);
 }
 
 // ---------------- 启动 ----------------
@@ -551,11 +485,11 @@ connectSource();
 // 把「按住」状态的键全部抬起来。卡住的 Ctrl/Win 会让整个系统的鼠标键盘都像坏了一样，
 // 所以退出、缴械、断开时都要兜一下。
 function releaseHeld() {
-  for (const [, keys] of activeVoice) { try { inject.release(keys); } catch {} }
+  // Cancel timers first. Release only keys owned by this injector.
+  inject.cancelAll();
   activeVoice.clear();
   voiceAt.clear();
   latch.clear();
-  try { inject.release([0x10, 0x11, 0x12, 0x5b, 0x5c, 0xa0, 0xa1, 0xa2, 0xa3, 0xa4, 0xa5]); } catch {}
 }
 
 // 语音键兜底：遥控器开麦时常常漏发抬键，超过 20 秒强制释放，避免卡键
@@ -608,6 +542,7 @@ function state() {
   });
   return {
     connected: present,
+    diagnostic,
     source: sourceKind,
     keys,
     capture: !!capture,
@@ -616,6 +551,7 @@ function state() {
     phantomDropped,
     filterPhantom: cfg.filterPhantom !== false,
     intercept: intercept.info(),
+    injection: inject.info(),
   };
 }
 
@@ -650,12 +586,14 @@ function appState() {
   }));
   return {
     connected: present,
+    diagnostic,
     source: sourceKind,
     panic: panicStop,
     capture: !!capture,
     learn: learnSlot,
     phantomDropped,
     intercept: intercept.info(),
+    injection: inject.info(),
     // 卡键静音中的键（面板刷新后仍然要显示，不然用户以为程序傻了）
     muted: guard.list().map(x => ({
       usage: x.usage,
@@ -732,6 +670,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url.pathname === '/api/mic/start' && req.method === 'POST') {
+    if (diagnostic) return json(res, 409, { ok: false, reason: '诊断模式不启动音频桥接' });
     // mic-live.cmd 自己会检查管理员权限并弹 UAC（ETW 必须提权），这里用普通权限起它就行
     const cmd = path.join(__dirname, '..', 'mic-live.cmd');
     if (!fs.existsSync(cmd)) {
@@ -779,13 +718,24 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/api/panic' && req.method === 'POST') {
     panicStop = true;
     learnSlot = null;
-    try { intercept.stop(); } catch {}
+    finishCapture([]);
     releaseHeld();
     sourceKind = 'none';
     interceptTried = true;
-    log('🛑 紧急停止：接管模式已关闭，输入全部交还系统（重启程序才会再接管）');
+    interceptPending = false;
+    const stopped = intercept.stop();
     broadcast({ type: 'state' });
-    return json(res, 200, { ok: true, panic: true });
+    let timer;
+    const complete = await Promise.race([
+      stopped.then(() => true),
+      new Promise(resolve => { timer = setTimeout(() => resolve(false), 2500); }),
+    ]);
+    clearTimeout(timer);
+    if (!complete) return json(res, 503, { ok: false, panic: panicStop,
+      reason: '按键注入已停止，但接管线程尚未确认退出，请退出程序后重试。' });
+    log('🛑 紧急停止：已取消注入并撤销接管，可点「重新接管」恢复');
+    broadcast({ type: 'state' });
+    return json(res, 200, { ok: true, panic: panicStop });
   }
 
   if (url.pathname === '/api/bind' && req.method === 'POST') {
@@ -826,13 +776,14 @@ const server = http.createServer(async (req, res) => {
     });
     res.write('\n');
     sseClients.add(res);
-    req.on('close', () => sseClients.delete(res));
+    res.on('close', () => sseClients.delete(res));
     return;
   }
 
   if (url.pathname === '/api/action' && req.method === 'POST') {
     const { usage, action } = await body(req);
     if (typeof usage !== 'number') return json(res, 400, { ok: false });
+    releaseHeld(); // A changed action must not leave its old voice hold active.
     if (!action || action.type === 'clear') delete cfg.map[usage];
     else cfg.map[usage] = action;
     store.save(cfg);
@@ -847,7 +798,7 @@ const server = http.createServer(async (req, res) => {
     broadcast({ type: 'state' });
 
     let alive = true;
-    req.on('close', () => { alive = false; if (capture) finishCapture([]); });
+    res.on('close', () => { alive = false; if (!res.writableEnded && capture) finishCapture([]); });
 
     const keys = await new Promise(resolve => {
       captureResolve = resolve;
@@ -867,6 +818,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url.pathname === '/api/reset' && req.method === 'POST') {
+    releaseHeld();
     cfg.map = {};
     store.save(cfg);
     syncPassthrough();

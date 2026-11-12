@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>IPRC1000 遥控器映射</title>
+<style>
+  :root{
+    --bg:#f4f6f9; --card:#ffffff; --line:#e4e8ee; --ink:#0f172a; --sub:#64748b;
+    --accent:#2563eb; --accent-soft:#eef4ff; --ok:#16a34a; --warn:#f59e0b;
+  }
+  *{box-sizing:border-box;-webkit-user-select:none;user-select:none}
+  html,body{height:100%;margin:0}
+  body{
+    background:var(--bg);color:var(--ink);
+    font:14px/1.5 "Segoe UI Variable Text","Segoe UI","Microsoft YaHei",system-ui,sans-serif;
+    display:flex;flex-direction:column;overflow:hidden;
+  }
+
+  /* ── 顶栏 ── */
+  header{
+    display:flex;align-items:center;gap:8px;padding:12px 18px;
+    background:var(--card);border-bottom:1px solid var(--line);flex:none;
+  }
+  .dot{width:8px;height:8px;border-radius:50%;background:#cbd5e1;flex:none}
+  .dot.on{background:var(--ok);box-shadow:0 0 0 3px rgba(22,163,74,.14)}
+  /* 学习提示条出现时顶栏会很挤：状态文字先缩（省略号），按钮一律不换行 */
+  #status{
+    font-size:13px;color:var(--sub);min-width:0;flex:0 1 auto;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .spacer{flex:1;min-width:0}
+  .learnbar{
+    display:none;align-items:center;gap:8px;font-size:13px;color:#92400e;
+    background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:4px 10px;
+    min-width:0;flex:0 1 auto;
+  }
+  .learnbar.on{display:flex}
+  .learnbar.warn{background:#fef2f2;border-color:#fecaca;color:#b91c1c}
+  .learnbar.warn .pulse{background:#dc2626}
+  #learntext{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  #status.bad{color:#b91c1c;font-weight:600}
+  .pulse{width:7px;height:7px;border-radius:50%;background:var(--warn);animation:pl 1s infinite;flex:none}
+  @keyframes pl{50%{opacity:.25}}
+  /* 卡键提示条：遥控器自己连发时的唯一解释窗口 */
+  .alertbar{
+    display:none;align-items:center;gap:10px;flex:none;
+    margin:10px 18px 0;padding:8px 12px;font-size:13px;color:#b91c1c;
+    background:#fef2f2;border:1px solid #fecaca;border-radius:10px;
+  }
+  .alertbar.on{display:flex}
+  .alertbar .pulse{background:#dc2626}
+  #alerttext{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  button{
+    font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--line);
+    background:#fff;color:var(--ink);padding:6px 12px;transition:.13s;
+    white-space:nowrap;flex:none;
+  }
+  button:hover{background:#f6f8fb}
+  button:active{transform:translateY(.5px)}
+  button:disabled{opacity:.45;cursor:default}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  button.primary:hover{filter:brightness(1.07)}
+  button.ghost{border-color:transparent;color:var(--sub)}
+  button.ghost:hover{background:#eef1f5;color:var(--ink)}
+  button.mini{padding:4px 9px;font-size:12.5px}
+
+  /* ── 主体 ── */
+  .shell{flex:1;display:grid;grid-template-columns:330px 1fr;min-height:0}
+  .stage{
+    background:linear-gradient(180deg,#eef2f7 0%,#e7ecf3 100%);
+    border-right:1px solid var(--line);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:10px;padding:14px;min-height:0;position:relative;
+  }
+  .artwrap{flex:1;min-height:0;width:100%;display:flex;align-items:center;justify-content:center}
+  #remote{height:100%;width:100%;display:block;filter:drop-shadow(0 12px 26px rgba(15,23,42,.13))}
+  .legend{
+    flex:none;display:flex;gap:12px;font-size:11.5px;color:var(--sub);
+    background:rgba(255,255,255,.82);border:1px solid var(--line);
+    border-radius:8px;padding:5px 9px;
+  }
+  .legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px;vertical-align:-1px}
+  .legend .l1{background:var(--accent)}
+  .legend .l2{background:var(--warn)}
+  .legend .l3{background:#cbd5e1}
+
+  /* ── 遥控器图（照着真机照片画：银灰机身、三列按钮） ── */
+  .slot{cursor:pointer;pointer-events:bounding-box}
+  .slot .base{fill:#8d9299;stroke:rgba(255,255,255,.5);stroke-width:1}
+  .slot .ring{fill:none;stroke:transparent;stroke-width:2.4}
+  .slot text{
+    text-anchor:middle;dominant-baseline:central;fill:#f3f5f7;
+    font:600 9px "Segoe UI Variable Text","Segoe UI",sans-serif;
+    pointer-events:none;
+  }
+  .slot .ic path,.slot .ic rect,.slot .ic circle{stroke:#f3f5f7;fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-width:1.9}
+  .slot .ic .fill{fill:#f3f5f7;stroke:none}
+
+  /* 未绑定：浅灰空壳 + 虚线边，一眼看出「这里还没接上」 */
+  .slot.empty .base{fill:#c3c7cc;stroke:#7d8289;stroke-width:1;stroke-dasharray:3.5 3}
+  .slot.empty text{fill:rgba(45,52,59,.58)}
+  .slot.empty .ic path,.slot.empty .ic rect,.slot.empty .ic circle{stroke:rgba(45,52,59,.52)}
+  .slot.empty .ic .fill{fill:rgba(45,52,59,.52)}
+
+  /* 已绑定没设动作：琥珀色圈 */
+  .slot.set .base{fill:#8d9299;stroke:#fbbf24;stroke-width:2}
+
+  /* 已改键：蓝底白字，一眼能看出来 */
+  .slot.mapped .base{fill:#2563eb;stroke:#9dbaff}
+  .slot.mapped text{fill:#fff}
+  .slot.mapped .ic path,.slot.mapped .ic rect,.slot.mapped .ic circle{stroke:#fff}
+
+  .slot:hover .base{stroke:#fff;stroke-width:1.8}
+  .slot.sel .ring{stroke:#0f172a;stroke-width:2.8}
+  .slot.flash .base{fill:#7dd3fc!important;stroke:#0ea5e9!important}
+  .slot.flash .ic path,.slot.flash .ic rect,.slot.flash .ic circle{stroke:#0b3b53!important}
+  .slot.learning .ring{stroke:#fbbf24;stroke-width:3;stroke-dasharray:6 4;animation:spin 6s linear infinite}
+  @keyframes spin{to{stroke-dashoffset:-60}}
+
+  /* ── 右侧面板 ── */
+  .panel{display:flex;flex-direction:column;min-height:0;background:var(--bg)}
+  .ph{padding:18px 22px 12px;flex:none}
+  .ptitle{font-size:17px;font-weight:650;letter-spacing:-.01em}
+  .psub{font-size:12.5px;color:var(--sub);margin-top:3px;min-height:19px}
+
+  /* 语音桥接状态条 */
+  .micbar{
+    display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--sub);
+    margin-top:9px;padding:6px 10px;border-radius:8px;background:#eef1f5;
+  }
+  .micbar .mcall{width:7px;height:7px;border-radius:50%;background:#cbd5e1;flex:none}
+  .micbar .mcall.on{background:var(--ok);box-shadow:0 0 0 3px rgba(22,163,74,.14)}
+  .micbar button{margin-left:auto}
+  .pbody{flex:1;overflow:auto;padding:0 22px 12px}
+  .pfoot{
+    flex:none;display:flex;align-items:center;gap:8px;padding:12px 22px;
+    border-top:1px solid var(--line);background:var(--card);
+  }
+  .row{display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+  .lbl{font-size:12.5px;color:var(--sub);margin-bottom:8px}
+  .lbl.inline{margin:0;flex:none}
+  code{
+    font:12px/1 ui-monospace,Consolas,monospace;color:#334155;background:#e9edf3;
+    padding:4px 7px;border-radius:6px;
+  }
+  .presets{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:16px}
+  .presets button{padding:8px 4px;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .presets button.on{background:var(--accent-soft);border-color:#bfd3fe;color:#1d4ed8;font-weight:600}
+  .rec{
+    font:12.5px ui-monospace,Consolas,monospace;background:#eef1f5;border-radius:8px;
+    padding:7px 12px;min-width:150px;text-align:center;
+  }
+  .rec.on{background:var(--accent-soft);color:var(--accent);animation:pl 1.1s infinite}
+  input[type=text]{
+    width:100%;font:inherit;padding:9px 11px;border:1px solid var(--line);
+    border-radius:8px;background:#fff;color:var(--ink);-webkit-user-select:text;user-select:text;
+  }
+  input[type=text]:focus{outline:2px solid #bfd3fe;outline-offset:-1px;border-color:#93b4fd}
+  .extras{border-top:1px solid var(--line);padding:12px 22px 16px;flex:none}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .chip{
+    font:12px ui-monospace,Consolas,monospace;padding:4px 9px;border-radius:7px;
+    border:1px solid var(--line);background:#fff;cursor:pointer;color:#475569;
+  }
+  .chip:hover{border-color:#94a3b8}
+  .chip.on{background:var(--accent-soft);border-color:#bfd3fe;color:#1d4ed8}
+  .chip.sel{background:#0f172a;color:#fff;border-color:#0f172a}
+  .emptyhint{padding:40px 0;text-align:center;color:var(--sub);font-size:13px}
+select{font:inherit;border:1px solid var(--line);border-radius:8px;padding:9px;min-width:220px;background:#fff;color:var(--ink)} input[type=checkbox]{width:auto} .pbody{overflow:auto} </style>
+</head>
+<body>
+<header>
+<span class="dot" id="dot"></span><span id="status">正在读取驱动…</span><span class="spacer"></span>
+<button class="mini" id="refresh">刷新</button><button class="mini" id="btnMode">启用映射</button>
+<button class="ghost mini" id="btnPanic">恢复透传</button>
+</header>
+<div class="shell"><aside class="stage"><div class="artwrap"><svg id="remote" viewBox="0 0 300 720" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="gbody2" x1="0" y1="0" x2="0.4" y2="1">
+          <stop offset="0" stop-color="#d3d6da"/>
+          <stop offset=".45" stop-color="#c0c4c9"/>
+          <stop offset="1" stop-color="#adb2b7"/>
+        </linearGradient>
+        <linearGradient id="gedge" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#ffffff" stop-opacity=".8"/>
+          <stop offset=".55" stop-color="#ffffff" stop-opacity=".12"/>
+          <stop offset="1" stop-color="#ffffff" stop-opacity=".45"/>
+        </linearGradient>
+      </defs>
+
+      <!-- 机身（细长，圆角） -->
+      <rect x="52" y="10" width="192" height="700" rx="30" fill="url(#gbody2)" stroke="#909599" stroke-width="1"/>
+      <rect x="58" y="16" width="180" height="688" rx="25" fill="none" stroke="url(#gedge)" stroke-width="1.4"/>
+
+      <!-- 顶部：左边是麦克风开孔（不是按键），右下是电源键（在 slots 里画） -->
+      <circle cx="88" cy="65" r="19" fill="#6c7176"/>
+      <circle cx="88" cy="65" r="19" fill="none" stroke="#4d5257" stroke-width="1"/>
+      <circle cx="88" cy="65" r="13" fill="none" stroke="#9ba1a7" stroke-width="1.5"
+              stroke-dasharray="1.6 4.2" opacity=".85"/>
+      <!-- 指示灯槽 -->
+      <rect x="126" y="35" width="72" height="3" rx="1.5" fill="#9ea4aa" opacity=".5"/>
+
+      <g id="slots"></g>
+
+      <!-- 底部 logo 区 -->
+      <rect x="126" y="648" width="36" height="28" rx="6" fill="#f0f2f4" opacity=".95"/>
+      <path d="M137 656 h-4.4 v12 h4.4" fill="none" stroke="#8b9096" stroke-width="2.8"
+            stroke-linecap="round" stroke-linejoin="round"/>
+    </svg></div>
+<div class="legend"><span><i class="l1"></i>单键映射</span><span><i class="l2"></i>已屏蔽</span><span><i class="l3"></i>原样放行</span></div></aside>
+<main class="panel"><div class="ph"><div class="ptitle" id="pName">选一个按键</div>
+<div class="psub">点击左侧遥控器上的按键，设置它的动作。</div></div>
+<div class="pbody">
+<div class="row"><span class="lbl inline">遥控器扫描码</span><code id="pCode">—</code></div>
+<div class="lbl">按下这个键时执行</div>
+<select id="ruleType"><option value="0">屏蔽（不执行）</option><option value="1">原样放行</option><option value="2">发送单键</option></select>
+<div id="tapFields" hidden><div class="lbl" style="margin-top:20px">目标按键</div>
+<select id="target"><option value="custom">自定义扫描码</option></select>
+<div class="row" style="margin-top:12px"><span>扫描码</span><input id="scanCode" placeholder="例如 0x01" style="width:110px"><label><input type="checkbox" id="extended"> E0 扩展键</label></div></div>
+<div class="row" style="margin-top:20px"><button id="btnRec">录制单键</button><div class="rec" id="recBox">—</div></div>
+<p style="color:var(--sub)">当前支持单键、原样放行和屏蔽。组合键、文字输入和语音功能尚未接入。</p>
+<p id="modeNote" style="color:var(--sub)"></p>
+<div id="message" role="status" style="min-height:48px;white-space:pre-wrap"></div>
+<div class="row"><span class="spacer"></span><span id="saveHint" style="color:var(--sub)"></span><button class="primary" id="btnSave">应用当前按键</button></div>
+</div><div class="pfoot" style="flex-wrap:wrap">
+<button class="ghost" id="reset">恢复默认绑定</button><span class="spacer"></span><button id="btnPersist">保存到设备</button>
+<div style="width:100%;font-size:12px;color:var(--sub);margin-top:10px">“应用”立即生效；“保存到设备”保存整套配置和当前模式，重连后自动恢复。</div>
+<div id="counts" style="width:100%;font-size:12px;color:var(--sub)"></div>
+</div></main></div>
+<script>window.IPRC_TOKEN='__IPRC_TOKEN__';</script><script src="/driver.js"></script>
+</body></html>

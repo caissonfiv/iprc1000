@@ -6,7 +6,7 @@
 // Windows 外壳按「拍」处理 Win 键，四件事挤在同一拍里就可能把 Win 留在按下状态，
 // 于是所有快捷键失灵、开始菜单乱弹。这里盯住展开顺序：修饰键先按、最后松。
 
-const { comboPlan } = require('../src/inject');
+const { comboPlan } = require('../src/combo-plan');
 
 let fail = 0;
 function ok(name, cond, extra) {

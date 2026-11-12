@@ -9,24 +9,26 @@
 //      ① 看门狗：每 2 秒核对 N 号设备的硬件 ID 还是不是遥控器，变了立刻缴械；
 //      ② 打字检测：1.2 秒内出现 6 个以上不同扫描码，说明是人在打字（遥控器一次只按一个键），
 //         立刻缴械。缴械 = 撤销过滤器 + 销毁上下文 + 退出线程，输入马上恢复正常。
-const { parentPort, workerData } = require('worker_threads');
+const { parentPort, workerData, receiveMessageOnPort } = require('worker_threads');
 const ffi = require('./interception-ffi');
 
 let api, ctx = 0n, probe = 0n, remoteId = 0;
 let expectedHwid = '';
 let pred = null;
-let nonePred = null;
 let disarmed = false;
 
 // 「原样放行」的扫描码集合：这些键不吞，直接把原始报文转发回键盘栈。
 // 用于 action.type === 'native' —— 接管模式下必须显式放行，否则方向键 / OK 会失灵。
 let passthrough = new Set((workerData && workerData.passthrough) || []);
+// Keep the down/up pair on the same route when configuration changes mid-press.
+const routes = new Map();
 
 function post(m) {
   try { parentPort.postMessage(m); } catch { /* 主线程已退出 */ }
 }
 
 function bail(code, reason) {
+  cleanup();
   post({ type: 'unavailable', code, reason });
   process.exit(0);
 }
@@ -35,12 +37,18 @@ function bail(code, reason) {
 function disarm(reason) {
   if (disarmed) return;
   disarmed = true;
-  try { if (ctx && nonePred) api.setFilter(ctx, nonePred, 0); } catch {}
+  cleanup();
+  post({ type: 'disarmed', reason });
+}
+
+function cleanup() {
+  // A false predicate selects no devices; clear the same device we armed.
+  try { if (ctx && pred) api.setFilter(ctx, pred, 0); } catch {}
   try { if (ctx) api.destroy(ctx); } catch {}
   try { if (probe) api.destroy(probe); } catch {}
   ctx = 0n; probe = 0n;
-  post({ type: 'disarmed', reason });
-  setTimeout(() => process.exit(0), 50);
+  try { if (pred) api.koffi.unregister(pred); } catch {}
+  pred = null;
 }
 
 try {
@@ -73,8 +81,11 @@ try {
 } catch { probe = 0n; }
 
 // ---- 找遥控器 ----
-const { list, hit } = ffi.findRemoteKeyboard(api, ctx);
+let list, hit;
+try { ({ list, hit } = ffi.findRemoteKeyboard(api, ctx)); }
+catch (error) { bail('ENUM_FAIL', String(error.message || error)); }
 if (!hit) {
+  cleanup();
   post({ type: 'nokeyboard', keyboards: list });
   process.exit(0);
 }
@@ -83,21 +94,26 @@ expectedHwid = hit.hwid;
 
 // ---- 只截获遥控器这一台键盘 ----
 try {
-  nonePred = ffi.makePredicate(api, () => 0);
   pred = ffi.makePredicate(api, d => (d === remoteId ? 1 : 0));
   api.setFilter(ctx, pred, api.FILTER_KEY_ALL);
 } catch (e) {
   bail('SET_FILTER_FAIL', '设置过滤器失败：' + String((e && e.message) || e));
 }
 
-post({ type: 'ready', device: remoteId, hwid: hit.hwid, keyboards: list });
+post({ type: 'ready', device: remoteId, hwid: hit.hwid, keyboards: list, version: workerData.version || 1 });
 
 // 主线程可以随时更新「原样放行」的键集合（改键之后）
-parentPort.on('message', m => {
-  if (m && m.type === 'passthrough') {
-    passthrough = new Set(m.set || []);
+function commands() {
+  let entry;
+  while ((entry = receiveMessageOnPort(parentPort))) {
+    const m = entry.message;
+    if (m && m.type === 'stop') { disarmed = true; return; }
+    if (m && m.type === 'passthrough') {
+      passthrough = new Set(m.set || []);
+      post({ type: 'configured', version: m.version });
+    }
   }
-});
+}
 
 // ---- 刹车 ①：核对槽位号还是不是遥控器 ----
 const norm = s => String(s || '').toUpperCase().replace(/\s+/g, '');
@@ -147,7 +163,9 @@ function tick() {
 
 const buf = Buffer.alloc(api.STROKE_SIZE);
 
+try {
 for (;;) {
+  commands();
   if (disarmed) break;
   tick();
 
@@ -210,7 +228,11 @@ for (;;) {
   }
 
   // native：不吞，原样转发回键盘栈（方向键、OK 这类系统原生行为）
-  if (passthrough.has(code)) {
+  const key = code + ':' + (state & (api.KEY_E0 | api.KEY_E1));
+  if (down && !routes.has(key)) routes.set(key, passthrough.has(code));
+  const forward = routes.has(key) ? routes.get(key) : passthrough.has(code);
+  if (!down) routes.delete(key);
+  if (forward) {
     try { api.send(ctx, dev, buf, 1); } catch { /* 转发失败就当它按下了没反应 */ }
     continue;
   }
@@ -224,8 +246,8 @@ for (;;) {
   });
 }
 
-if (!disarmed) {
-  try { api.destroy(ctx); } catch {}
-  try { if (probe) api.destroy(probe); } catch {}
+} finally {
+  cleanup();
   post({ type: 'closed', reason: '接收循环结束' });
+  parentPort.close();
 }

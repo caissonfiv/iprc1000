@@ -441,16 +441,21 @@ async function load(){
 
 function paintStatus(){
   $('dot').className = 'dot' + (A.connected ? ' on' : '');
-  const mode = A.panic ? ' · 接管已紧急停止（按键已交还系统）'
+  const stopping = A.intercept && A.intercept.phase === 'stopping';
+  const configPending = A.intercept && A.intercept.active && A.intercept.requestedVersion !== A.intercept.appliedVersion;
+  const mode = A.diagnostic ? ' · 诊断模式（不接管、不注入）'
+             : stopping ? ' · 注入已停止，正在等待接管线程退出'
+             : A.panic ? ' · 接管已紧急停止（按键已交还系统）'
              : A.source === 'intercept' ? ' · 接管模式（按键已被拦下，不会打字）'
              : A.source === 'hid' ? ' · 直读模式'
-             : A.source === 'raw' ? ' · 键盘模式（会往窗口里打字）'
+             : A.source === 'raw' ? ' · 观察模式（不执行映射，原始按键仍会打字）'
              : '';
   // 装了驱动却没接管：这是最难受的状态 —— 按键会照常打进窗口（满屏 m），
   // 同时还被我们派发一次。必须显眼地说出来，否则用户只会觉得「程序坏了」。
-  const needArm = A.connected && !A.panic && A.intercept && A.intercept.dll && A.source !== 'intercept';
+  const needArm = A.connected && !A.diagnostic && !A.panic && A.intercept && A.intercept.dll && A.source !== 'intercept';
   const stalled = !!(A.intercept && A.intercept.stalled);
   $('status').textContent = (A.connected ? '遥控器已连接' : '遥控器未连接 · 按任意键唤醒') + mode
+    + (configPending ? ' · 正在应用按键配置…' : '')
     + (stalled ? ' · 接管线程无响应，正在自动重建' : '')
     + (needArm ? ' · 接管失效，按键会直接打字（正在自动重试）' : '');
   $('status').classList.toggle('bad', !!(needArm || stalled));
@@ -871,9 +876,13 @@ $('reset').onclick = async () => {
   await load();
 };
 $('btnPanic').onclick = async () => {
-  if (!confirm('紧急停止接管？\n\n按键会全部交还系统（遥控器可能又开始往窗口里打字），\n点「重新接管」或重启程序就能恢复。')) return;
-  await fetch('/api/panic', { method: 'POST' });
-  await load();
+  // Emergency actions must not wait behind a confirmation dialog.
+  $('btnPanic').disabled = true;
+  try {
+    const response = await fetch('/api/panic', { method: 'POST' });
+    const result = await response.json();
+    if (!response.ok) alert(result.reason || '接管线程尚未确认停止，请退出程序');
+  } finally { $('btnPanic').disabled = false; await load(); }
 };
 // 遥控器按了没反应时的一键急救：销毁旧上下文、重新抢一次接管
 $('btnRearm').onclick = async () => {

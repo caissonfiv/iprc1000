@@ -1,15 +1,16 @@
 'use strict';
-// 遥控器面板布局：图上的每个「坑位」对应一个 HID 用法码（接管模式下是扫描码）。
+// 遥控器面板布局。兼容字段 usage 实际是 PS/2 扫描码，不是 HID usage。
 // 为什么要这一层：光有 keymap（用法码 → 动作）没法画图，
 // 图上得知道「哪个坑是哪个码」。坑位 ↔ 码的对应关系由用户按一次键来确认。
 const fs = require('fs');
 const path = require('path');
+const { SCAN_CODES } = require('./device-profile');
 
 const DATA_DIR = process.env.IPRC_DATA || path.join(__dirname, '..', 'config');
 const FILE = path.join(DATA_DIR, 'layout.json');
 
 // 遥控器图上的坑位，顺序和真机一致（上 → 下，左 → 右）。
-// usage 只是「出厂默认猜测」，用户按下真实按键后会覆盖。
+// 新安装使用实测位置；已有配置（包括主动解绑）始终优先。
 const SLOTS = [
   { id: 'pwr',     name: '电源' },
 
@@ -40,7 +41,7 @@ const SLOTS = [
 
   { id: 'mute',    name: '静音' },
   { id: 'last',    name: '上一个频道' },
-];
+].map(slot => ({ ...slot, usage: SCAN_CODES[slot.id] }));
 
 const SLOT_IDS = new Set(SLOTS.map(s => s.id));
 

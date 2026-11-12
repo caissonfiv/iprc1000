@@ -1,0 +1,42 @@
+name: Core tests
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm test
+      - run: npm run test:native
+  driver-prototype:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Download pinned portable compiler and WDK
+        shell: pwsh
+        run: ./driver/bootstrap.ps1
+      - name: Build unsigned driver and run shared C tests
+        shell: pwsh
+        run: |
+          ./driver/bootstrap-msvc.ps1
+          ./driver/build-zig.ps1 -ToolchainRoot ./driver/.toolchain
+      - name: Check native kernel PE image
+        run: node driver/scripts/inspect-pe.cjs driver/build/iprcflt.sys
+      - name: Reject malformed loader metadata
+        run: node --test driver/tests/pe_validation.test.cjs
+      - name: Reject wildcard and injected hardware IDs
+        shell: pwsh
+        run: ./driver/tests/package_test.ps1
+      - name: Validate example device-specific INF (no installation)
+        shell: pwsh
+        run: |
+          ./driver/scripts/prepare-package.ps1 -HardwareId 'HID\VID_0A5C&PID_8502&Col01'
+          & './driver/.toolchain/wdk/c/tools/10.0.26100.0/x64/infverif.exe' /w './driver/build/package/iprcflt.inf'
+          if ($LASTEXITCODE -ne 0) { throw 'INF validation failed' }
